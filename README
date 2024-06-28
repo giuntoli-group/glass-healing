@@ -1,0 +1,9 @@
+This repository contains the general LAMMPS codes used in our paper to simulate polymer glasses under steady and oscillatory shear conditions. 
+
+
+The list of scripts are:
+
+01_PolGlass.in
+02_SteadyShear.in
+03_OscilatoryShear.in
+04_PolGlass_Crack.in

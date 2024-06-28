@@ -1,0 +1,173 @@
+# PhD Jose Ruiz-Franco.
+# University of Groningen.
+# January 2024
+
+# DESCRIPTION:
+## This script simulates short poylmer chains interacting via the Kremer-Grest (FENE+WCA) potential.
+## Additionally, Lennard-Jones interactions are introduced between non-consecutive monomers and
+## monomers from different polymer chains. Additionally, the presence of a cylindrical hole along the y-axis
+## is taken into account. If you need to run simulations from a non-termalized configuration:
+### (1) A short NVE run is performed to allow the bonds to relax. here, the maximum displacement is limited.
+### (2) Pressure is allowed to relax to the user-defined value 'mypress'.
+### (3) NPT run is performed.
+## By default: Options (1) and (2) are commented out.
+
+# REQUIRES:
+## Variables:
+#--> rad_c: Radius of the cylinder.
+#--> mytemp: Simulation temperature.
+#--> seed : Seed for random number. 
+#--> fname: Input file name.
+
+## A folder named "Restart" to store the restart binary files.
+## A folder named "RUN" to store configurations (linear time).
+## An input file to start the simulation (default name: name).
+
+# OUTPUT:
+## Trajectory files.
+## Restart files.
+## thermo.dat: file with thermodynamic observables.
+
+#####################################################
+# Variables.
+
+# MATH.
+variable sr_two         equal   $(2^(1/6.))     		
+
+# CRACK PARAMETERS.
+variable rad_c          index   1.0                     
+
+# THERMODYNAMIC PARAMETERS.
+variable mytemp         index 	1.0				
+variable mypress	    equal 	0.0		
+
+# NUMBER OF STEPS OF RUNS.
+variable tnve		    equal 	1e4			
+variable tramp		    equal 	5e5		
+variable tnpt		    equal 	1e7			
+
+# INFORMATION PRINTING PERIODS.
+variable thermodump     equal   1000				
+variable trajdump       equal   1e6 #$(v_tnpt/10)    	
+variable trestart       equal   $(v_tnpt*0.6)    		
+
+# SIMULATION PARAMETERS
+variable tstep          equal   0.001   			
+variable nve_lim	    equal	0.001		
+variable Tdamp		    equal	100			
+variable pdamp		    equal	1e4		
+
+# SEEDS
+variable seed		    index	1000				
+
+# STRINGS
+variable fname 		    index   filename				
+variable thermofile     string  thermo.dat			
+variable simname 	    string 	relax_nose_T${mytemp}_P${mypress}	
+
+#####################################################
+# Initialization.
+units          		lj         				
+boundary        	p p p       				
+atom_style      	bond				      
+
+## Starting file.
+#read_data       	${fname}
+read_restart		${fname}
+reset_timestep      0
+
+group			    chain  type 1
+
+## Masses
+mass			    1 1.0
+
+## Define crack.
+region              crack cylinder y 0.0 0.0 ${rad_c} EDGE EDGE side out units box
+fix                 wall all wall/region crack lj126 1.0 1.0 ${sr_two}
+
+#####################################################
+# Setting.
+## Interaction (WCA potential).
+pair_style          lj/cut 2.5                                    
+pair_coeff          * * 1.0 1.0 2.5
+pair_modify         shift yes
+
+## Interaction (FENE potential).
+special_bonds       fene
+bond_style          harmonic
+bond_coeff          * 555.5 0.97                                 
+
+comm_modify         cutoff 3.0
+
+## Initial velocities from Maxwell-Boltzmann distribution.
+velocity            all create ${mytemp} ${seed} dist gaussian 
+
+## Verlet list.
+neighbor		    0.4 bin					
+neigh_modify		every 10 delay 0 check yes	       
+
+# Variables for use in fix print. 
+variable step		equal step
+variable temp		equal temp
+variable ke		    equal ke
+variable pe		    equal pe
+variable vol		equal vol
+variable press		equal press
+
+thermo_style    	custom step ke pe temp press vol
+#thermo_modify   	norm no
+thermo          	${thermodump}
+
+timestep        	${tstep}
+
+fix			        dummy all print ${thermodump} "${step} ${ke} ${pe} ${temp} ${press} ${vol}" file ${thermofile} screen no title "#1:step 2:ke 3:pe 4:temp 5:press 6:vol"	
+
+#####################################################
+# NVE run.
+
+#print 			    'SETTING NVE RUN...'
+#fix 			    1 all momentum 10 linear 1 1 1
+#fix             	2 all nve/limit ${nve_lim} 		
+#run			        ${tnve}
+
+#print 			    'NVE RUN COMPLETE'
+
+#unfix 1
+#unfix 2
+
+#####################################################
+# Pressure ramping
+
+#print 			    'SETTING PRESSURE RAMPING (Nose-Hoover barostat)'
+
+#fix         		1 all npt temp ${mytemp} ${mytemp} $(v_tstep*v_Tdamp) iso ${press} ${mypress} $(v_tstep*v_pdamp) fixedpoint 0.0 0.0 0.0 
+#run			        ${tramp}
+#unfix			    1 
+
+#print 			    'PRESSURE RAMPING COMPLETE'
+#####################################################
+# NPT run
+
+fix         		2 all npt temp ${mytemp} ${mytemp} $(v_tstep*v_Tdamp) iso ${mypress} ${mypress} $(v_tstep*v_pdamp) fixedpoint 0.0 0.0 0.0 
+
+print 			    'SETTING NPT RUN...'
+
+dump			    1 all custom ${trajdump} RUN/dump.${simname}.*.lammpstrj id type xu yu zu
+dump_modify		    1 sort id
+dump_modify		    1 pad 10
+dump_modify		    1 format line "%d %d %.8f %.8f %.8f"
+
+#restart         	${trestart} restart/${simname}.*.restart
+
+run			        ${tnpt}
+
+print 			    'NPT RUN COMPLETE'
+unfix 2
+
+#####################################################
+# WRITE FINAL INFORMATIONS
+ 
+write_data      	data.${simname}
+write_restart		Restart/restart.${simname}
+
+print "MISSION COMPLETE"

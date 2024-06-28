@@ -1,0 +1,159 @@
+# PhD Jose Ruiz-Franco.
+# University of Groningen.
+# January 2024
+
+# DESCRIPTION:
+## This script simulates short poylmer chains interacting via the Kremer-Grest (FENE+WCA) potential.
+## Additionally, Lennard-Jones interactions are introduced between non-consecutive monomers and
+## monomers from different polymer chains. This system is subjected to steady shear deformation.
+
+# REQUIRES:
+## Variables:
+#--> mytemp: Simulation temperature.
+#--> seed : Seed for random number. 
+#--> A: shear rate.
+#--> fname: Input file name.
+## A folder named "Restart" to store the restart binary files.
+## A folder named "RUN" to store configurations (linear time).
+## An input file to start the simulation (default name: name).
+
+# OUTPUT:
+## Trajectory files.
+## Restart files.
+## thermo.dat: file with thermodynamic observables.
+## stress.dat: file with the stress_xy evolution.
+
+######################################################################################
+# Variables.
+
+## NVT parameters.
+variable mytemp 	    index 	1.0		
+variable seed           index   1             
+
+## Shear simulations.
+variable A		        index 	1		
+variable Ndef		    equal	1			
+
+## Number of steps.
+variable tnvt           equal   1e9                  
+variable tstep          equal   0.002                  
+
+## Printing periods.
+variable maxstrain	    equal   200
+variable strainstep	    equal   0.01			
+variable thermodump     equal   1e5                     		
+variable trajdump       equal   1e6                     	
+variable trestart       equal   1e6                     		
+variable stressdump     equal   ceil(${strainstep}/(${tstep}*${A}))     
+
+## Simulation parameters.
+variable Tdamping       equal   100*${tstep}		
+
+## Strings.
+variable fname          index   name 			
+variable thermofile     string  thermo.dat              
+variable stressfile     string  stress.dat		
+variable simname        string  SteadyState_	 	       
+
+######################################################################################
+# Initialization.
+
+units               lj                           
+boundary            p p p                         
+atom_style          bond                            
+
+## Starting file.
+read_data           ${fname}			
+#read_restart       ${fname}		
+reset_timestep      0
+
+change_box          all triclinic remap units box  
+
+group			    chain type 1
+
+## Masses
+mass			    1 1.0
+
+######################################################################################
+# Settings.
+## Interaction (WCA potential).
+pair_style          lj/cut 2.5                                                  
+pair_coeff          * * 1.0 1.0 2.5
+pair_modify         shift yes
+
+## Interaction (FENE potential).
+special_bonds       fene
+bond_style          harmonic
+bond_coeff          * 555.5 0.97                                       
+
+comm_modify         cutoff 3.0
+
+## Initial velocities from Maxwell-Boltzmann distribution.
+#velocity           all create ${mytemp} ${seed} dist gaussian 
+
+## Verlet list.
+neighbor            0.4 bin                                
+neigh_modify        every 1 delay 1 check yes
+
+######################################################################################
+# Dynamics.
+
+## Shear + Nose/Sllod simulations.
+fix                 shearbox all deform ${Ndef} xy erate ${A} remap v units box     
+fix 			    nvtshear all nvt/sllod temp ${mytemp} ${mytemp} ${Tdamping}	
+
+######################################################################################
+# Observables.
+
+## Stress tensor.
+compute             peratom all stress/atom NULL pair bond
+compute             tensor all reduce sum c_peratom[1] c_peratom[2] c_peratom[3] c_peratom[4] c_peratom[5] c_peratom[6]
+variable            stress equal c_tensor[4]/vol							
+
+## Temperature
+compute             newT all temp/deform 								
+
+###########################################
+# Save information.
+
+## Configurations
+variable		    f file timestep_0.01.dat
+variable		    s equal next(f)
+dump			    sheardump all custom ${trajdump} RUN/${simname}* id mol type x y z vx vy vz
+dump_modify		    sheardump every v_s
+dump_modify		    sheardump format line "%d %d %d %.8f %.8f %.8f %.8f %.8f %.8f"			
+dump_modify		    sheardump pbc yes								
+dump_modify		    sheardump sort id								
+dump_modify         sheardump pad 10
+
+restart			    ${trestart} Restart/${simname}*.restart
+
+## Observables.
+variable step       equal step
+variable temp       equal temp
+variable newT		equal c_newT
+variable pe		    equal pe
+variable strain     equal ${A}*${tstep}*v_step
+
+fix                 stop all halt 1 v_strain > ${maxstrain}
+
+thermo_style        custom step temp v_newT pe v_stress 
+#thermo_modify      norm no
+thermo              ${thermodump}
+
+fix                 dummy all print ${thermodump} "${step} ${newT} ${pe}" file ${thermofile} screen no title "#1:step 2:newT 3:pe"
+fix			        dummystress all print ${stressdump} "${strain} ${stress}" file ${stressfile} screen no title "#1:strain 2:stress"
+
+timestep            ${tstep}
+run                 ${tnvt}
+
+print               'NVT RUN COMPLETE'
+
+#####################################################
+# WRITE FINAL INFORMATIONS
+
+write_data          data.${simname}
+write_restart       Restart/restart.${simname}
+
+print "MISSION COMPLETE"
+
