@@ -7,3 +7,8 @@ The list of scripts are:
 02_SteadyShear.in
 03_OscilatoryShear.in
 04_PolGlass_Crack.in
+
+
+For a rough idea of the time needed to replicate the results of our work:
+simulations were performed on the Dutch national supercomputer Snellius, using a single node and roughly 12 to 24 tasks per node. 
+Each simulation requires roughly an execution time of 50-70h spread between equilibration, production, and shear (either oscillatory or steady shear, leading to differences in total execution time).
