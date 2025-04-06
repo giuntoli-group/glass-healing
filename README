@@ -1,4 +1,4 @@
-This repository contains the general LAMMPS codes used in our paper to simulate polymer glasses under steady and oscillatory shear conditions. 
+This repository contains the general LAMMPS codes used in our paper to simulate polymer glasses under steady and oscillatory shear conditions. It also contains the data files of the published figures in the Source_Data folder.
 
 
 The list of scripts are:
